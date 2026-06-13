@@ -225,6 +225,12 @@ export function hydrateNativeFileIconElements(root: ParentNode): void {
 
     element.classList.add('native-pending');
     const unsubscribe = subscribeNativeFileIcon(key, () => {
+      // Drop listeners whose element was removed from the DOM (e.g. useFileTags
+      // replacing innerHTML) so detached nodes aren't retained via LISTENERS.
+      if (!element.isConnected) {
+        unsubscribe();
+        return;
+      }
       const dataUrl = CACHE.get(key);
       if (isSafeIconDataUrl(dataUrl)) {
         applyNativeIconImage(element, dataUrl);
@@ -246,7 +252,7 @@ export function hydrateNativeFileIconElements(root: ParentNode): void {
   }
 }
 
-export function useNativeFileIcon(request: NativeFileIconRequest, enabled = true): string | null {
+export function useNativeFileIcon(request: NativeFileIconRequest, enabled = true): string | null | undefined {
   const key = useMemo(() => getNativeFileIconCacheKey(request), [request.filePath, request.fileName, request.isDirectory]);
   const [, setVersion] = useState(0);
 
@@ -261,8 +267,14 @@ export function useNativeFileIcon(request: NativeFileIconRequest, enabled = true
     return unsubscribe;
   }, [enabled, key, request.filePath, request.fileName, request.isDirectory]);
 
+  // Tri-state: null = disabled/invalid-key/resolved-without-icon,
+  // undefined = still pending (no cache entry yet), string = safe data URL.
   if (!enabled || !key) {
     return null;
+  }
+
+  if (!CACHE.has(key)) {
+    return undefined;
   }
 
   const cached = CACHE.get(key);

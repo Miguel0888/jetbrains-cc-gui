@@ -26,7 +26,11 @@ export function NativeFileIcon({
   enabled = true,
 }: NativeFileIconProps) {
   const nativeIcon = useNativeFileIcon({ filePath, fileName, isDirectory }, enabled);
-  const classes = joinClasses('codriver-native-file-icon', nativeIcon ? 'native-loaded' : 'native-pending', className);
+  const classes = joinClasses(
+    'codriver-native-file-icon',
+    nativeIcon ? 'native-loaded' : nativeIcon === undefined ? 'native-pending' : false,
+    className,
+  );
 
   if (nativeIcon) {
     return (

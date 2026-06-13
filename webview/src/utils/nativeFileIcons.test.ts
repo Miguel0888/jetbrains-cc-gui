@@ -219,4 +219,31 @@ describe('hydrateNativeFileIconElements', () => {
     expect(el.classList.contains('native-pending')).toBe(false);
     expect(sendToJavaMock).not.toHaveBeenCalled();
   });
+
+  it('unsubscribes a listener when its element is no longer connected', async () => {
+    const { hydrateNativeFileIconElements } = await loadModule();
+    const key = 'file:/project/i.ts';
+    const { root, el } = buildElement(key);
+
+    // root is not attached to the document, so el.isConnected === false.
+    expect(el.isConnected).toBe(false);
+
+    // No cache yet -> hydrate subscribes a listener and requests the icon.
+    hydrateNativeFileIconElements(root);
+
+    // Backend resolves: the callback must detect the disconnected element,
+    // unsubscribe and bail out without mutating it.
+    emitBackendResponse(JSON.stringify({ icons: [{ id: key, dataUrl: PNG_DATA_URL }] }));
+    expect(el.querySelector('img')).toBeNull();
+
+    // Prove the listener was actually removed: reconnect the element and resolve
+    // again. A retained listener would hydrate it now; an unsubscribed one leaves
+    // the element untouched.
+    document.body.appendChild(root);
+    expect(el.isConnected).toBe(true);
+    emitBackendResponse(JSON.stringify({ icons: [{ id: key, dataUrl: PNG_DATA_URL }] }));
+    expect(el.querySelector('img')).toBeNull();
+
+    document.body.removeChild(root);
+  });
 });
