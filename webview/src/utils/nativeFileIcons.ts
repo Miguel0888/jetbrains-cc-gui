@@ -19,6 +19,11 @@ const LISTENERS = new Map<string, Set<() => void>>();
 const PENDING = new Set<string>();
 const PENDING_TIMERS = new Map<string, ReturnType<typeof setTimeout>>();
 
+// Maximum number of entries to retain in the frontend icon cache. When exceeded,
+// the oldest entries are evicted to prevent unbounded memory growth in long-lived
+// sessions or large workspaces.
+const CACHE_MAX_SIZE = 512;
+
 // Defensive timeout: if the backend never answers a request (or answers without
 // the expected id), the pending key is released after this delay so later
 // requests for the same key can be retried instead of being blocked forever.
@@ -75,8 +80,21 @@ function clearPendingTimer(key: string): void {
 function resolvePending(key: string, value: NativeFileIconCacheValue): void {
   clearPendingTimer(key);
   PENDING.delete(key);
-  CACHE.set(key, value);
+  cacheSet(key, value);
   notify(key);
+}
+
+/** Set a cache entry, evicting the oldest entries when the cache exceeds its limit. */
+function cacheSet(key: string, value: NativeFileIconCacheValue): void {
+  CACHE.set(key, value);
+  if (CACHE.size > CACHE_MAX_SIZE) {
+    const iterator = CACHE.keys();
+    // Evict the oldest entry (first key in insertion order).
+    const oldest = iterator.next().value;
+    if (oldest !== undefined) {
+      CACHE.delete(oldest);
+    }
+  }
 }
 
 /**
@@ -258,6 +276,14 @@ export function useNativeFileIcon(request: NativeFileIconRequest, enabled = true
 
   useEffect(() => {
     if (!enabled || !key) {
+      return undefined;
+    }
+
+    // Skip subscription and request when the key is already resolved in the
+    // cache (including cached null). No further notify() will ever fire for a
+    // resolved key, so subscribing would only retain an unused function reference
+    // in LISTENERS until unmount.
+    if (CACHE.has(key)) {
       return undefined;
     }
 

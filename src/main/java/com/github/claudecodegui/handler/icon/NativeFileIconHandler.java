@@ -20,6 +20,7 @@ import com.intellij.util.concurrency.AppExecutorUtil;
 
 import javax.imageio.ImageIO;
 import javax.swing.Icon;
+import javax.swing.UIManager;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
@@ -136,7 +137,14 @@ public class NativeFileIconHandler extends BaseMessageHandler {
     }
 
     private IconImage resolveIconImage(String filePath, String fileName, boolean directory) {
-        String cacheKey = (filePath == null ? "" : filePath) + '|'
+        // Include the current LAF name in the cache key so that icons are
+        // re-resolved after a Look-and-Feel / IDE theme switch (many IntelliJ
+        // icons have light/dark variants).
+        String lafName = "";
+        try {
+            lafName = UIManager.getLookAndFeel().getName();
+        } catch (Exception ignored) { }
+        String cacheKey = lafName + '|' + (filePath == null ? "" : filePath) + '|'
                 + (fileName == null ? "" : fileName) + '|' + directory;
 
         IconImage cached = ICON_CACHE.get(cacheKey);
