@@ -247,3 +247,24 @@ describe('hydrateNativeFileIconElements', () => {
     document.body.removeChild(root);
   });
 });
+
+describe('cache bounding', () => {
+  it('evicts the oldest entries past the limit while keeping the newest resolved key', async () => {
+    const { readNativeFileIcon, requestNativeFileIcon } = await loadModule();
+
+    // Trigger installation of the backend callback so emitBackendResponse is wired.
+    requestNativeFileIcon('file:/x/0.ts', { filePath: '/x/0.ts' });
+
+    // One entry past the CACHE_MAX_SIZE (512) limit forces a single eviction.
+    const total = 513;
+    const icons = [];
+    for (let i = 0; i < total; i += 1) {
+      icons.push({ id: `file:/x/${i}.ts`, dataUrl: PNG_DATA_URL });
+    }
+    emitBackendResponse(JSON.stringify({ icons }));
+
+    // Oldest (first inserted) evicted; newest (last resolved) retained.
+    expect(readNativeFileIcon('file:/x/0.ts')).toBeUndefined();
+    expect(readNativeFileIcon(`file:/x/${total - 1}.ts`)).toBe(PNG_DATA_URL);
+  });
+});

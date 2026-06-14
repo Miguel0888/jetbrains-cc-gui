@@ -8,7 +8,7 @@ vi.mock('../../utils/bridge', () => ({
 }));
 
 import { NativeFileIcon } from './NativeFileIcon';
-import { getNativeFileIconCacheKey, useNativeFileIcon } from '../../utils/nativeFileIcons';
+import { getNativeFileIconCacheKey, readNativeFileIcon, useNativeFileIcon } from '../../utils/nativeFileIcons';
 
 const PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC';
 
@@ -60,6 +60,58 @@ describe('useNativeFileIcon tri-state', () => {
       useNativeFileIcon({ filePath: '/x/hook-disabled.ts', fileName: 'hook-disabled.ts' }, false));
 
     expect(result.current).toBeNull();
+  });
+
+  it('does not re-request when the icon is already cached as a data URL', () => {
+    const request = { filePath: '/x/hook-cached-icon.ts', fileName: 'hook-cached-icon.ts' };
+    const key = getNativeFileIconCacheKey(request);
+
+    const first = renderHook(() => useNativeFileIcon(request, true));
+    act(() => emit(JSON.stringify({ icons: [{ id: key, dataUrl: PNG_DATA_URL }] })));
+    expect(first.result.current).toBe(PNG_DATA_URL);
+    first.unmount();
+    sendToJavaMock.mockClear();
+
+    // A fresh mount for the same (cached) key must not subscribe/request again.
+    const second = renderHook(() => useNativeFileIcon(request, true));
+    expect(second.result.current).toBe(PNG_DATA_URL);
+    expect(sendToJavaMock).not.toHaveBeenCalled();
+  });
+
+  it('does not re-request when the icon is already cached as null', () => {
+    const request = { filePath: '/x/hook-cached-null.ts', fileName: 'hook-cached-null.ts' };
+    const key = getNativeFileIconCacheKey(request);
+
+    const first = renderHook(() => useNativeFileIcon(request, true));
+    act(() => emit(JSON.stringify({ icons: [{ id: key, dataUrl: null }] })));
+    expect(first.result.current).toBeNull();
+    first.unmount();
+    sendToJavaMock.mockClear();
+
+    const second = renderHook(() => useNativeFileIcon(request, true));
+    expect(second.result.current).toBeNull();
+    expect(sendToJavaMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the resolved value after the key is evicted from the bounded cache', () => {
+    const request = { filePath: '/x/hook-evicted.ts', fileName: 'hook-evicted.ts' };
+    const key = getNativeFileIconCacheKey(request);
+
+    const { result, rerender } = renderHook(() => useNativeFileIcon(request, true));
+    act(() => emit(JSON.stringify({ icons: [{ id: key, dataUrl: PNG_DATA_URL }] })));
+    expect(result.current).toBe(PNG_DATA_URL);
+
+    // Overflow the bounded cache so the resolved key is evicted (oldest-first).
+    const others: Array<{ id: string; dataUrl: string }> = [];
+    for (let i = 0; i < 600; i += 1) {
+      others.push({ id: `file:/evict/${i}.ts`, dataUrl: PNG_DATA_URL });
+    }
+    act(() => emit(JSON.stringify({ icons: others })));
+    expect(readNativeFileIcon(key)).toBeUndefined();
+
+    // A re-render still surfaces the value via the resolvedRef snapshot.
+    rerender();
+    expect(result.current).toBe(PNG_DATA_URL);
   });
 });
 

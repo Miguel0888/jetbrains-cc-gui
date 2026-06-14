@@ -137,15 +137,7 @@ public class NativeFileIconHandler extends BaseMessageHandler {
     }
 
     private IconImage resolveIconImage(String filePath, String fileName, boolean directory) {
-        // Include the current LAF name in the cache key so that icons are
-        // re-resolved after a Look-and-Feel / IDE theme switch (many IntelliJ
-        // icons have light/dark variants).
-        String lafName = "";
-        try {
-            lafName = UIManager.getLookAndFeel().getName();
-        } catch (Exception ignored) { }
-        String cacheKey = lafName + '|' + (filePath == null ? "" : filePath) + '|'
-                + (fileName == null ? "" : fileName) + '|' + directory;
+        String cacheKey = createIconCacheKey(currentLookAndFeelName(), filePath, fileName, directory);
 
         IconImage cached = ICON_CACHE.get(cacheKey);
         if (cached != null) {
@@ -157,6 +149,26 @@ public class NativeFileIconHandler extends BaseMessageHandler {
             ICON_CACHE.put(cacheKey, iconImage);
         }
         return iconImage;
+    }
+
+    /** Current Look-and-Feel name, or empty string if it cannot be resolved. */
+    private static String currentLookAndFeelName() {
+        try {
+            return UIManager.getLookAndFeel().getName();
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    /**
+     * Build the icon cache key. The LAF name is the leading component so the same file
+     * re-resolves to a distinct cache entry after a Look-and-Feel / IDE theme switch
+     * (many IntelliJ icons have light/dark variants). Pure/static so it is unit testable
+     * without the IDE platform.
+     */
+    static String createIconCacheKey(String lafName, String filePath, String fileName, boolean directory) {
+        return lafName + '|' + (filePath == null ? "" : filePath) + '|'
+                + (fileName == null ? "" : fileName) + '|' + directory;
     }
 
     private Icon resolveIcon(String filePath, String fileName, boolean directory) {
