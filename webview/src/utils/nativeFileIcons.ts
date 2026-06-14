@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { sendToJava } from './bridge';
 
 export interface NativeFileIconRequest {
@@ -274,6 +274,11 @@ export function useNativeFileIcon(request: NativeFileIconRequest, enabled = true
   const key = useMemo(() => getNativeFileIconCacheKey(request), [request.filePath, request.fileName, request.isDirectory]);
   const [, setVersion] = useState(0);
 
+  // Snapshot the resolved value so the component is resilient to cache eviction.
+  // Once we observe a resolved value (string or null), we keep it in a ref so
+  // that a later eviction from the bounded CACHE doesn't regress to undefined.
+  const resolvedRef = useRef<{ key: string; value: string | null } | null>(null);
+
   useEffect(() => {
     if (!enabled || !key) {
       return undefined;
@@ -284,11 +289,20 @@ export function useNativeFileIcon(request: NativeFileIconRequest, enabled = true
     // resolved key, so subscribing would only retain an unused function reference
     // in LISTENERS until unmount.
     if (CACHE.has(key)) {
+      const cached = CACHE.get(key);
+      resolvedRef.current = { key, value: isSafeIconDataUrl(cached) ? cached : null };
       return undefined;
     }
 
     installNativeFileIconCallback();
-    const unsubscribe = subscribeNativeFileIcon(key, () => setVersion((value) => value + 1));
+    const unsubscribe = subscribeNativeFileIcon(key, () => {
+      // Snapshot the value on notification so it survives eviction.
+      if (CACHE.has(key)) {
+        const cached = CACHE.get(key);
+        resolvedRef.current = { key, value: isSafeIconDataUrl(cached) ? cached : null };
+      }
+      setVersion((value) => value + 1);
+    });
     requestNativeFileIcon(key, request);
     return unsubscribe;
   }, [enabled, key, request.filePath, request.fileName, request.isDirectory]);
@@ -299,10 +313,17 @@ export function useNativeFileIcon(request: NativeFileIconRequest, enabled = true
     return null;
   }
 
+  // Use the snapshotted value if available and still for the current key.
+  if (resolvedRef.current && resolvedRef.current.key === key) {
+    return resolvedRef.current.value;
+  }
+
   if (!CACHE.has(key)) {
     return undefined;
   }
 
   const cached = CACHE.get(key);
-  return isSafeIconDataUrl(cached) ? cached : null;
+  const result = isSafeIconDataUrl(cached) ? cached : null;
+  resolvedRef.current = { key, value: result };
+  return result;
 }
